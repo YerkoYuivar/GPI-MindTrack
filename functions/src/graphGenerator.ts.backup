@@ -1,0 +1,325 @@
+import * as admin from 'firebase-admin';
+import * as functions from 'firebase-functions';
+
+const db = admin.firestore();
+
+// =====================================
+// TIPOS
+// =====================================
+
+interface Pattern {
+    id: string;
+    label: string;
+    type: 'emotion' | 'activity' | 'person' | 'place' | 'topic' | 'trigger';
+    frequency: number;
+    importance: number;
+    firstSeen: Date;
+    lastSeen: Date;
+}
+
+interface GraphEdge {
+    source: string;
+    target: string;
+    weight: number;
+}
+
+// =====================================
+// ANÁLISIS DE TEXTO SIMPLE
+// =====================================
+
+/**
+ * Extrae palabras clave de un texto
+ */
+function extractKeywords(text: string): string[] {
+    // Palabras comunes a ignorar (stopwords en español)
+    const stopwords = new Set([
+        'el', 'la', 'de', 'que', 'y', 'a', 'en', 'un', 'ser', 'se', 'no', 'haber',
+        'por', 'con', 'su', 'para', 'como', 'estar', 'tener', 'le', 'lo', 'todo',
+        'pero', 'más', 'hacer', 'o', 'poder', 'decir', 'este', 'ir', 'otro', 'ese',
+        'mi', 'tu', 'me', 'te', 'si', 'yo', 'muy', 'bien', 'es', 'fue', 'al', 'del'
+    ]);
+
+    const words = text
+        .toLowerCase()
+        .replace(/[^\wáéíóúñü\s]/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length > 3 && !stopwords.has(w));
+
+    return words;
+}
+
+/**
+ * Detecta emociones básicas en el texto
+ */
+function detectEmotions(text: string): Pattern[] {
+    const emotionPatterns: Record<string, string[]> = {
+        felicidad: ['feliz', 'alegre', 'contento', 'alegría', 'felicidad', 'emocionado', 'optimista'],
+        tristeza: ['triste', 'tristeza', 'deprimido', 'melancólico', 'decaído', 'lágrimas'],
+        ansiedad: ['ansioso', 'ansiedad', 'nervioso', 'preocupado', 'estresado', 'angustia'],
+        enojo: ['enojado', 'molesto', 'irritado', 'frustrado', 'rabia', 'ira'],
+        miedo: ['miedo', 'temor', 'asustado', 'pánico', 'terror'],
+        amor: ['amor', 'cariño', 'quiero', 'amo', 'adoro', 'cariñoso'],
+        gratitud: ['agradecido', 'gracias', 'gratitud', 'aprecio'],
+    };
+
+    const lowerText = text.toLowerCase();
+    const emotions: Pattern[] = [];
+
+    for (const [emotion, keywords] of Object.entries(emotionPatterns)) {
+        const count = keywords.filter(kw => lowerText.includes(kw)).length;
+        if (count > 0) {
+            emotions.push({
+                id: `emotion_${emotion}`,
+                label: emotion.charAt(0).toUpperCase() + emotion.slice(1),
+                type: 'emotion',
+                frequency: count,
+                importance: Math.min(count / 3, 1),
+                firstSeen: new Date(),
+                lastSeen: new Date(),
+            });
+        }
+    }
+
+    return emotions;
+}
+
+/**
+ * Extrae actividades del texto
+ */
+function extractActivities(text: string): Pattern[] {
+    const activityPatterns: Record<string, string[]> = {
+        trabajo: ['trabajo', 'oficina', 'reunión', 'tarea', 'proyecto'],
+        ejercicio: ['correr', 'gym', 'ejercicio', 'deporte', 'caminar'],
+        estudio: ['estudio', 'clase', 'examen', 'aprender', 'libro'],
+        socializar: ['amigos', 'salir', 'fiesta', 'reunión', 'charla'],
+        descanso: ['dormir', 'descansar', 'siesta', 'relajar'],
+    };
+
+    const lowerText = text.toLowerCase();
+    const activities: Pattern[] = [];
+
+    for (const [activity, keywords] of Object.entries(activityPatterns)) {
+        const count = keywords.filter(kw => lowerText.includes(kw)).length;
+        if (count > 0) {
+            activities.push({
+                id: `activity_${activity}`,
+                label: activity.charAt(0).toUpperCase() + activity.slice(1),
+                type: 'activity',
+                frequency: count,
+                importance: Math.min(count / 2, 1),
+                firstSeen: new Date(),
+                lastSeen: new Date(),
+            });
+        }
+    }
+
+    return activities;
+}
+
+/**
+ * Genera patrones a partir de las entradas del diario
+ */
+async function generatePatterns(userId: string): Promise<Pattern[]> {
+    console.log(`📊 Generando patrones para usuario: ${userId}`);
+
+    // Obtener todas las entradas del usuario
+    const entriesSnapshot = await db
+        .collection('entries')
+        .where('userId', '==', userId)
+        .where('state', '==', 'active')
+        .get();
+
+    console.log(`📊 Encontradas ${entriesSnapshot.size} entradas`);
+
+    const patternMap = new Map<string, Pattern>();
+
+    // Procesar cada entrada
+    for (const doc of entriesSnapshot.docs) {
+        const data = doc.data();
+        const content = data.content || '';
+
+        // Detectar emociones
+        const emotions = detectEmotions(content);
+        emotions.forEach(emotion => {
+            const existing = patternMap.get(emotion.id);
+            if (existing) {
+                existing.frequency += emotion.frequency;
+                existing.importance = Math.max(existing.importance, emotion.importance);
+                existing.lastSeen = emotion.lastSeen;
+            } else {
+                patternMap.set(emotion.id, emotion);
+            }
+        });
+
+        // Detectar actividades
+        const activities = extractActivities(content);
+        activities.forEach(activity => {
+            const existing = patternMap.get(activity.id);
+            if (existing) {
+                existing.frequency += activity.frequency;
+                existing.importance = Math.max(existing.importance, activity.importance);
+                existing.lastSeen = activity.lastSeen;
+            } else {
+                patternMap.set(activity.id, activity);
+            }
+        });
+    }
+
+    const patterns = Array.from(patternMap.values());
+    console.log(`📊 Generados ${patterns.length} patrones`);
+
+    return patterns;
+}
+
+/**
+ * Genera conexiones entre patrones
+ */
+function generateEdges(patterns: Pattern[]): GraphEdge[] {
+    const edges: GraphEdge[] = [];
+
+    // Crear conexiones entre patrones que aparecen juntos
+    for (let i = 0; i < patterns.length; i++) {
+        for (let j = i + 1; j < patterns.length; j++) {
+            const pattern1 = patterns[i];
+            const pattern2 = patterns[j];
+
+            // Conectar emociones con actividades (más probable que estén relacionadas)
+            if (
+                (pattern1.type === 'emotion' && pattern2.type === 'activity') ||
+                (pattern1.type === 'activity' && pattern2.type === 'emotion')
+            ) {
+                edges.push({
+                    source: pattern1.id,
+                    target: pattern2.id,
+                    weight: Math.min((pattern1.frequency + pattern2.frequency) / 10, 1),
+                });
+            }
+            // Conectar emociones entre sí
+            else if (pattern1.type === 'emotion' && pattern2.type === 'emotion') {
+                edges.push({
+                    source: pattern1.id,
+                    target: pattern2.id,
+                    weight: Math.min((pattern1.frequency + pattern2.frequency) / 15, 1),
+                });
+            }
+        }
+    }
+
+    console.log(`📊 Generadas ${edges.length} conexiones`);
+
+    return edges;
+}
+
+// =====================================
+// CLOUD FUNCTION
+// =====================================
+
+/**
+ * Genera el grafo de patrones para un usuario
+ * Se puede invocar manualmente o automáticamente
+ */
+export const generateGraph = functions.https.onCall(async (data, context) => {
+    // Verificar autenticación
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Usuario no autenticado');
+    }
+
+    const userId = data.userId || context.auth.uid;
+
+    // Solo permitir generar el grafo del propio usuario
+    if (userId !== context.auth.uid) {
+        throw new functions.https.HttpsError('permission-denied', 'No tienes permiso para generar el grafo de otro usuario');
+    }
+
+    try {
+        console.log(`📊 Iniciando generación de grafo para ${userId}`);
+
+        // Generar patrones
+        const patterns = await generatePatterns(userId);
+
+        if (patterns.length === 0) {
+            throw new functions.https.HttpsError('not-found', 'No hay suficientes entradas para generar el grafo');
+        }
+
+        // Generar conexiones
+        const edges = generateEdges(patterns);
+
+        // Guardar en Firestore
+        await db.collection('graphs').doc(userId).set({
+            patterns,
+            edges,
+            generatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            entryCount: patterns.length,
+            version: '1.0',
+            dateRange: {
+                start: patterns.reduce((min, p) => p.firstSeen < min ? p.firstSeen : min, patterns[0].firstSeen),
+                end: patterns.reduce((max, p) => p.lastSeen > max ? p.lastSeen : max, patterns[0].lastSeen),
+            },
+        });
+
+        console.log(`✅ Grafo generado exitosamente para ${userId}`);
+
+        return {
+            success: true,
+            patternCount: patterns.length,
+            edgeCount: edges.length,
+            message: 'Grafo generado exitosamente'
+        };
+    } catch (error: any) {
+        console.error(`❌ Error generando grafo para ${userId}:`, error);
+        throw new functions.https.HttpsError('internal', `Error al generar el grafo: ${error.message}`);
+    }
+});
+
+/**
+ * Regenera el grafo automáticamente cuando se crea o actualiza una entrada
+ * (Solo si el usuario tiene > 3 entradas)
+ */
+export const onEntryChange = functions.firestore
+    .document('entries/{entryId}')
+    .onWrite(async (change, context) => {
+        const afterData = change.after.exists ? change.after.data() : null;
+        const userId = afterData?.userId;
+
+        if (!userId) {
+            console.log('⚠️ No se encontró userId en la entrada');
+            return;
+        }
+
+        // Contar entradas del usuario
+        const entriesSnapshot = await db
+            .collection('entries')
+            .where('userId', '==', userId)
+            .where('state', '==', 'active')
+            .get();
+
+        const entryCount = entriesSnapshot.size;
+
+        console.log(`📊 Usuario ${userId} tiene ${entryCount} entradas`);
+
+        // Solo regenerar si tiene 3+ entradas
+        if (entryCount >= 3) {
+            console.log(`📊 Regenerando grafo para usuario ${userId}`);
+
+            try {
+                const patterns = await generatePatterns(userId);
+                const edges = generateEdges(patterns);
+
+                await db.collection('graphs').doc(userId).set({
+                    patterns,
+                    edges,
+                    generatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    entryCount: patterns.length,
+                    version: '1.0',
+                    dateRange: {
+                        start: patterns.reduce((min, p) => p.firstSeen < min ? p.firstSeen : min, patterns[0].firstSeen),
+                        end: patterns.reduce((max, p) => p.lastSeen > max ? p.lastSeen : max, patterns[0].lastSeen),
+                    },
+                });
+
+                console.log(`✅ Grafo regenerado automáticamente para ${userId}`);
+            } catch (error) {
+                console.error(`❌ Error regenerando grafo para ${userId}:`, error);
+            }
+        }
+    });

@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "emotional-journal",
+    "slug": "emotional-journal",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Necesitamos acceso a tu galería para adjuntar imágenes a tus entradas.",
+        "NSMicrophoneUsageDescription": "Necesitamos acceso al micrófono para grabar notas de voz."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "READ_MEDIA_IMAGES",
+        "RECORD_AUDIO"
+      ]
+    },
+    "scheme": "emotionaljournal",
+    "extra": {
+      "firebase": {
+        "apiKey": "AIzaSyBdvr2l8r8-xj0qE6rbiHO-YPc69M70sUE",
+        "authDomain": "emotional-journal-1879a.firebaseapp.com",
+        "projectId": "emotional-journal-1879a",
+        "storageBucket": "emotional-journal-1879a.firebasestorage.app",
+        "messagingSenderId": "910123039853",
+        "appId": "1:910123039853:web:40f4f96d465335029c9364",
+        "measurementId": "G-96BYFLBN15"
+      },
+      "useFirebaseEmulators": true
+    },
+    "platforms": [
+      "ios",
+      "android"
+    ]
+  }
+}

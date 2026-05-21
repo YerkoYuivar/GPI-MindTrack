@@ -1,0 +1,126 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android
+
+# ==========================================
+# Firebase Emulator & Exports (Mindtrack)
+# ==========================================
+firebase-export-*/
+firebase/
+.firebase/
+.firebase-data*/
+.logs/
+
+# Bloquear todos los archivos de log en la raíz
+*.log
+firebase-debug*
+.firestore-debug*
+.firebase-emulators*
+
+# ==========================================
+# Archivos duplicados por error de copia
+# ==========================================
+* 2.*
+* 3.*
+* 4.*
+* 2.md
+* 3.md# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android
+
+# Firebase Emulator & Exports (Mindtrack)
+firebase-export-*/
+firebase/
+.firebase/
+.firebase-data*/
+.logs/
+
+# Bloquear todos los archivos de log en la raíz
+*.log
+firebase-debug*
+.firestore-debug*
+.firebase-emulators*
+
+
+# Archivos duplicados por error de copia
+* 2.*
+* 3.*
+* 4.*
+* 2.md
+* 3.md
